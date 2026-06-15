@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparação Animada | Telemetria Real</title>
+    <meta name="description" content="Análise de AVL avançada com interpolação de tempo real">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="cabecalho">
+        <h1>Comparação Animada | Telemetria Real</h1>
+        <nav>
+            <ul>
+                <li><a href="#inicio">Importação</a></li>
+                <li><a href="#mapa-area">Análise no Mapa</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section id="inicio" class="secao">
+            <h2>Importar Arquivos (JSON ou CSV do Validador)</h2>
+
+            <div class="horarios-programados">
+                <div class="bloco-veiculo">
+                    <div class="titulo-bloco titulo-a">VEÍCULO A</div>
+                    <div class="campo-horario">
+                        <label>Início (HH:MM):</label>
+                        <input type="time" id="inicioProgramadoA">
+                        <div id="resInicioA" class="resultado-horario" style="display:none;"></div>
+                    </div>
+                    <div class="campo-horario">
+                        <label>Fim (HH:MM):</label>
+                        <input type="time" id="fimProgramadoA">
+                        <div id="resFimA" class="resultado-horario" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <div class="bloco-veiculo">
+                    <div class="titulo-bloco titulo-b">VEÍCULO B</div>
+                    <div class="campo-horario">
+                        <label>Início (HH:MM):</label>
+                        <input type="time" id="inicioProgramadoB">
+                        <div id="resInicioB" class="resultado-horario" style="display:none;"></div>
+                    </div>
+                    <div class="campo-horario">
+                        <label>Fim (HH:MM):</label>
+                        <input type="time" id="fimProgramadoB">
+                        <div id="resFimB" class="resultado-horario" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controles">
+                <div>
+                    <div class="card-veiculo card-a" id="tituloA">VEÍCULO A</div>
+                    <input type="file" id="arquivoA" accept=".json, .csv">
+                    <p id="statusA">Aguardando arquivo...</p>
+                </div>
+                <div>
+                    <div class="card-veiculo card-b" id="tituloB">VEÍCULO B</div>
+                    <input type="file" id="arquivoB" accept=".json, .csv">
+                    <p id="statusB">Aguardando arquivo...</p>
+                </div>
+            </div>
+
+            <div class="controle-velocidade">
+                <strong>Multiplicador de Tempo Real:</strong>
+                <button class="btn-vel ativo" data-vel="1">1x</button>
+                <button class="btn-vel" data-vel="5">5x</button>
+                <button class="btn-vel" data-vel="10">10x</button>
+                <button class="btn-vel" data-vel="30">30x</button>
+                <button class="btn-vel" data-vel="60">60x</button>
+            </div>
+
+            <button id="btnAnimacao">🚀 INICIAR COMPARAÇÃO</button>
+        </section>
+
+        <section id="mapa-area" class="secao">
+            <h2>Mapa de Reprodução</h2>
+            <div id="mapa"></div>
+            <div id="alertaAnalise" class="alerta"></div>
+
+            <div class="painel-dados">
+                <div class="dados-a">
+                    <div class="dado-linha">Veículo: <span class="valor-dado" id="numVeicA">A 🟥</span></div>
+                    <div class="dado-linha">Velocidade Atual: <span id="velA" class="valor-dado">0</span> km/h</div>
+                    <div class="dado-linha">Horário Exato: <span id="horaA" class="valor-dado">--:--:--</span></div>
+                </div>
+                <div class="separador">VS</div>
+                <div class="dados-b">
+                    <div class="dado-linha">Veículo: <span class="valor-dado" id="numVeicB">B 🟦</span></div>
+                    <div class="dado-linha">Velocidade Atual: <span id="velB" class="valor-dado">0</span> km/h</div>
+                    <div class="dado-linha">Horário Exato: <span id="horaB" class="valor-dado">--:--:--</span></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="rodape">
+        <p>Análise de Telemetria AVL &copy; 2026</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
