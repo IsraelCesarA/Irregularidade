@@ -19,7 +19,7 @@ let animacaoPausada = false;
 let offsetA = 0;
 let offsetB = 0;
 
-// Objeto para armazenar as referências do DOM (Iniciados após carregamento da árvore HTML)
+// Objeto para armazenar as referências do DOM
 let el = {};
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -42,7 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
         arquivoB: document.getElementById('arquivoB')
     };
 
-    // Mapeamento de Eventos (Substituindo os triggers inline do antigo HTML)
+    // Mapeamento de Eventos
     el.arquivoA.addEventListener('change', (e) => carregarArquivo(e, 'A'));
     el.arquivoB.addEventListener('change', (e) => carregarArquivo(e, 'B'));
     el.btnAnimacao.addEventListener('click', alternarAnimacao);
@@ -53,6 +53,9 @@ document.addEventListener("DOMContentLoaded", () => {
             definirVelocidade(fator, this);
         });
     });
+
+    // NOVO: Ouvinte de clique no mapa para pular o tempo da animação
+    mapa.on('click', aoClicarNoMapa);
 });
 
 // Extrai numerais do nome do arquivo
@@ -112,7 +115,97 @@ function getPosicaoNoTempo(dados, tempo) {
     };
 }
 
-// Processamento de JSON ou de arquivo CSV com JSON embutido
+// Função auxiliar para calcular a distância simples entre duas coordenadas (Fórmula Euclidiana rápida)
+function calcularDistanciaRapida(lat1, lon1, lat2, lon2) {
+    const dLat = lat1 - lat2;
+    const dLon = lon1 - lon2;
+    return Math.sqrt(dLat * dLat + dLon * dLon);
+}
+
+// NOVO: Função que lida com o clique no mapa
+function aoClicarNoMapa(e) {
+    // Só permite interagir se a animação já tiver sido iniciada pelo menos uma vez
+    if (veiculos.A.length === 0 && veiculos.B.length === 0) return;
+
+    const latClicada = e.latlng.lat;
+    const lonClicada = e.latlng.lng;
+
+    let menorDistancia = Infinity;
+    let tempoAlvoMinutos = 0;
+    let veiculoReferencia = veiculos.A.length > 0 ? 'A' : 'B';
+
+    // Varre os pontos do veículo para achar o mais próximo de onde o usuário clicou
+    veiculos[veiculoReferencia].forEach(ponto => {
+        const dist = calcularDistanciaRapida(latClicada, lonClicada, ponto.latitude, ponto.longitude);
+        if (dist < menorDistancia) {
+            menorDistancia = dist;
+            // O tempo deste veículo precisa ser somado ao seu respectivo offset para virar o tempo global da animação
+            tempoAlvoMinutos = ponto.tempoRelativoMinutos + (veiculoReferencia === 'A' ? offsetA : offsetB);
+        }
+    });
+
+    // Se a distância for razoavelmente perto, atualiza o cronômetro da animação
+    if (menorDistancia < 0.05) { // Limite de tolerância de clique para evitar saltos acidentais muito distantes da rota
+        tempoAtual = tempoAlvoMinutos;
+        
+        // Limpa as linhas de trajetória desenhadas anteriormente para que elas sejam refeitas a partir do novo ponto
+        trajectories.A.forEach(l => mapa.removeLayer(l)); trajectories.A = [];
+        trajectories.B.forEach(l => mapa.removeLayer(l)); trajectories.B = [];
+
+        // Força a atualização visual imediata das posições
+        atualizarFramesDeAnimacao();
+
+        // Se a animação não estava rodando (estava pausada ou parada), inicia/retoma automaticamente
+        if (!animacaoEmAndamento) {
+            animacaoEmAndamento = true;
+            animacaoPausada = false;
+            el.btnAnimacao.textContent = '⏸️ PAUSAR ANIMAÇÃO';
+            el.btnAnimacao.classList.add('pausado');
+            
+            // Cria os marcadores se eles ainda não existirem no mapa
+            const posA = getPosicaoNoTempo(veiculos.A, tempoAtual - offsetA);
+            const posB = getPosicaoNoTempo(veiculos.B, tempoAtual - offsetB);
+            
+            if (!marcadoresVeiculo.A) {
+                marcadoresVeiculo.A = L.marker([posA.latitude, posA.longitude], {
+                    icon: L.divIcon({ className: 'icone-veiculo icone-a', html: numerosVeiculo.A, iconSize: [35,35] })
+                }).addTo(mapa);
+            }
+            if (!marcadoresVeiculo.B) {
+                marcadoresVeiculo.B = L.marker([posB.latitude, posB.longitude], {
+                    icon: L.divIcon({ className: 'icone-veiculo icone-b', html: numerosVeiculo.B, iconSize: [35,35] })
+                }).addTo(mapa);
+            }
+
+            iniciarLoopAnimacao();
+        }
+    }
+}
+
+// NOVO: Separado em uma função isolada para poder ser chamado tanto pelo Loop quanto pelo clique do mapa
+function atualizarFramesDeAnimacao() {
+    const tempoA = tempoAtual - offsetA;
+    const tempoB = tempoAtual - offsetB;
+
+    const posAtualA = getPosicaoNoTempo(veiculos.A, tempoA);
+    const posAtualB = getPosicaoNoTempo(veiculos.B, tempoB);
+
+    if (marcadoresVeiculo.A && posAtualA) marcadoresVeiculo.A.setLatLng([posAtualA.latitude, posAtualA.longitude]);
+    if (marcadoresVeiculo.B && posAtualB) marcadoresVeiculo.B.setLatLng([posAtualB.latitude, posAtualB.longitude]);
+
+    el.velA.textContent = tempoA >= 0 && posAtualA ? posAtualA.velocidade : 0;
+    el.horaA.textContent = tempoA >= 0 && posAtualA ? posAtualA.horario : "Aguardando Partida...";
+
+    el.velB.textContent = tempoB >= 0 && posAtualB ? posAtualB.velocidade : 0;
+    el.horaB.textContent = tempoB >= 0 && posAtualB ? posAtualB.horario : "Aguardando Partida...";
+
+    if (posAtualA && posAtualB) {
+        mapa.panTo([(posAtualA.latitude + posAtualB.latitude)/2, (posAtualA.longitude + posAtualB.longitude)/2]);
+    }
+    
+    return { posAtualA, posAtualB };
+}
+
 function carregarArquivo(event, idVeiculo) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
@@ -255,31 +348,20 @@ function iniciarLoopAnimacao() {
 
         tempoAtual += (taxaDeAtualizacaoMs / 60000) * velocidadeAnimacao; 
 
+        // Atualiza a tela e pega as novas coordenadas geradas
+        const { posAtualA, posAtualB } = atualizarFramesDeAnimacao();
+
         const tempoA = tempoAtual - offsetA;
         const tempoB = tempoAtual - offsetB;
 
-        const posAtualA = getPosicaoNoTempo(veiculos.A, tempoA);
-        const posAtualB = getPosicaoNoTempo(veiculos.B, tempoB);
-
-        marcadoresVeiculo.A.setLatLng([posAtualA.latitude, posAtualA.longitude]);
-        marcadoresVeiculo.B.setLatLng([posAtualB.latitude, posAtualB.longitude]);
-
-        if (tempoA > 0 && posAnteriorA && posAtualA.latitude !== posAnteriorA.latitude) {
+        if (tempoA > 0 && posAnteriorA && posAtualA && posAtualA.latitude !== posAnteriorA.latitude) {
             trajectories.A.push(L.polyline([[posAnteriorA.latitude, posAnteriorA.longitude], [posAtualA.latitude, posAtualA.longitude]], {color:'#d32f2f', weight:3}).addTo(mapa));
         }
-        if (tempoB > 0 && posAnteriorB && posAtualB.latitude !== posAnteriorB.latitude) {
+        if (tempoB > 0 && posAnteriorB && posAtualB && posAtualB.latitude !== posAnteriorB.latitude) {
             trajectories.B.push(L.polyline([[posAnteriorB.latitude, posAnteriorB.longitude], [posAtualB.latitude, posAtualB.longitude]], {color:'#1976d2', weight:3, dashArray:'5,5'}).addTo(mapa));
         }
 
         posAnteriorA = posAtualA; posAnteriorB = posAtualB;
-
-        el.velA.textContent = tempoA >= 0 ? posAtualA.velocidade : 0;
-        el.horaA.textContent = tempoA >= 0 ? posAtualA.horario : "Aguardando Partida...";
-
-        el.velB.textContent = tempoB >= 0 ? posAtualB.velocidade : 0;
-        el.horaB.textContent = tempoB >= 0 ? posAtualB.horario : "Aguardando Partida...";
-
-        mapa.panTo([(posAtualA.latitude + posAtualB.latitude)/2, (posAtualA.longitude + posAtualB.longitude)/2]);
 
     }, taxaDeAtualizacaoMs);
 }
