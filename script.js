@@ -19,6 +19,10 @@ let animacaoPausada = false;
 let offsetA = 0;
 let offsetB = 0;
 
+// Variáveis para a Gravação de Vídeo
+let mediaRecorder;
+let gravacaoChunks = [];
+
 // Objeto para armazenar as referências do DOM
 let el = {};
 
@@ -39,13 +43,20 @@ document.addEventListener("DOMContentLoaded", () => {
         alerta: document.getElementById('alertaAnalise'), 
         btnAnimacao: document.getElementById('btnAnimacao'),
         arquivoA: document.getElementById('arquivoA'),
-        arquivoB: document.getElementById('arquivoB')
+        arquivoB: document.getElementById('arquivoB'),
+        // Elementos de gravação
+        btnIniciarGravacao: document.getElementById('btnIniciarGravacao'),
+        btnPararGravacao: document.getElementById('btnPararGravacao')
     };
 
     // Mapeamento de Eventos
     el.arquivoA.addEventListener('change', (e) => carregarArquivo(e, 'A'));
     el.arquivoB.addEventListener('change', (e) => carregarArquivo(e, 'B'));
     el.btnAnimacao.addEventListener('click', alternarAnimacao);
+    
+    // Eventos de Gravação de Mídia
+    el.btnIniciarGravacao.addEventListener('click', iniciarGravacao);
+    el.btnPararGravacao.addEventListener('click', pararGravacao);
 
     document.querySelectorAll('.btn-vel').forEach(botao => {
         botao.addEventListener('click', function() {
@@ -54,11 +65,84 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // NOVO: Ouvinte de clique no mapa para pular o tempo da animação
+    // Ouvinte de clique no mapa para pular o tempo da animação
     mapa.on('click', aoClicarNoMapa);
 });
 
-// Extrai numerais do nome do arquivo
+// ==========================================
+// LÓGICA DE GRAVAÇÃO DE VÍDEO
+// ==========================================
+async function iniciarGravacao() {
+    try {
+        // Solicita ao usuário a captura da aba ou tela inteira
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 30, max: 60 } },
+            audio: false
+        });
+
+        gravacaoChunks = [];
+        
+        // Define o container e codec de vídeo suportados nativamente pelo navegador
+        const options = { mimeType: 'video/webm;codecs=vp9' };
+        mediaRecorder = new MediaRecorder(stream, options);
+
+        mediaRecorder.ondataavailable = function(e) {
+            if (e.data && e.data.size > 0) {
+                gravacaoChunks.push(e.data);
+            }
+        };
+
+        mediaRecorder.onstop = function() {
+            // Cria o blob e dispara a transferência automática do arquivo
+            const blob = new Blob(gravacaoChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `telemetria_reproducao_${Date.now()}.webm`;
+            document.body.appendChild(a);
+            a.click();
+            
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+
+            // Reseta controles visuais do painel
+            el.btnIniciarGravacao.disabled = false;
+            el.btnIniciarGravacao.style.background = '#d32f2f';
+            el.btnIniciarGravacao.textContent = '🔴 GRAVAR REPRODUÇÃO';
+            el.btnPararGravacao.disabled = true;
+
+            // Finaliza os processos de captura em background do navegador
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+
+        // Modifica estados dos botões
+        el.btnIniciarGravacao.disabled = true;
+        el.btnIniciarGravacao.style.background = '#ccc';
+        el.btnIniciarGravacao.textContent = '🎥 GRAVANDO TELA...';
+        el.btnPararGravacao.disabled = false;
+
+    } catch (err) {
+        console.error("Erro ao iniciar gravação de tela: ", err);
+        alert("A gravação precisa da permissão de compartilhamento de aba/tela ativa.");
+    }
+}
+
+function pararGravacao() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+    }
+}
+
+// ==========================================
+// INTERPOLAÇÃO, TELEMETRIA E ANIMAÇÃO
+// ==========================================
+
 function extrairNumeroVeiculo(nomeArquivo) {
     const semExtensao = nomeArquivo.replace('.json', '').replace('.csv', '');
     const match = semExtensao.match(/\d+/);
@@ -81,7 +165,6 @@ function definirVelocidade(fator, botao) {
     }
 }
 
-// Interpolação baseada no Tempo Físico Relativo
 function getPosicaoNoTempo(dados, tempo) {
     if (dados.length === 0) return null;
     if (tempo <= dados[0].tempoRelativoMinutos) return dados[0]; 
@@ -115,16 +198,13 @@ function getPosicaoNoTempo(dados, tempo) {
     };
 }
 
-// Função auxiliar para calcular a distância simples entre duas coordenadas (Fórmula Euclidiana rápida)
 function calcularDistanciaRapida(lat1, lon1, lat2, lon2) {
     const dLat = lat1 - lat2;
     const dLon = lon1 - lon2;
     return Math.sqrt(dLat * dLat + dLon * dLon);
 }
 
-// NOVO: Função que lida com o clique no mapa
 function aoClicarNoMapa(e) {
-    // Só permite interagir se a animação já tiver sido iniciada pelo menos uma vez
     if (veiculos.A.length === 0 && veiculos.B.length === 0) return;
 
     const latClicada = e.latlng.lat;
@@ -134,35 +214,28 @@ function aoClicarNoMapa(e) {
     let tempoAlvoMinutos = 0;
     let veiculoReferencia = veiculos.A.length > 0 ? 'A' : 'B';
 
-    // Varre os pontos do veículo para achar o mais próximo de onde o usuário clicou
     veiculos[veiculoReferencia].forEach(ponto => {
         const dist = calcularDistanciaRapida(latClicada, lonClicada, ponto.latitude, ponto.longitude);
         if (dist < menorDistancia) {
             menorDistancia = dist;
-            // O tempo deste veículo precisa ser somado ao seu respectivo offset para virar o tempo global da animação
             tempoAlvoMinutos = ponto.tempoRelativoMinutos + (veiculoReferencia === 'A' ? offsetA : offsetB);
         }
     });
 
-    // Se a distância for razoavelmente perto, atualiza o cronômetro da animação
-    if (menorDistancia < 0.05) { // Limite de tolerância de clique para evitar saltos acidentais muito distantes da rota
+    if (menorDistancia < 0.05) { 
         tempoAtual = tempoAlvoMinutos;
         
-        // Limpa as linhas de trajetória desenhadas anteriormente para que elas sejam refeitas a partir do novo ponto
         trajectories.A.forEach(l => mapa.removeLayer(l)); trajectories.A = [];
         trajectories.B.forEach(l => mapa.removeLayer(l)); trajectories.B = [];
 
-        // Força a atualização visual imediata das posições
         atualizarFramesDeAnimacao();
 
-        // Se a animação não estava rodando (estava pausada ou parada), inicia/retoma automaticamente
         if (!animacaoEmAndamento) {
             animacaoEmAndamento = true;
             animacaoPausada = false;
             el.btnAnimacao.textContent = '⏸️ PAUSAR ANIMAÇÃO';
             el.btnAnimacao.classList.add('pausado');
             
-            // Cria os marcadores se eles ainda não existirem no mapa
             const posA = getPosicaoNoTempo(veiculos.A, tempoAtual - offsetA);
             const posB = getPosicaoNoTempo(veiculos.B, tempoAtual - offsetB);
             
@@ -182,7 +255,6 @@ function aoClicarNoMapa(e) {
     }
 }
 
-// NOVO: Separado em uma função isolada para poder ser chamado tanto pelo Loop quanto pelo clique do mapa
 function atualizarFramesDeAnimacao() {
     const tempoA = tempoAtual - offsetA;
     const tempoB = tempoAtual - offsetB;
@@ -348,7 +420,6 @@ function iniciarLoopAnimacao() {
 
         tempoAtual += (taxaDeAtualizacaoMs / 60000) * velocidadeAnimacao; 
 
-        // Atualiza a tela e pega as novas coordenadas geradas
         const { posAtualA, posAtualB } = atualizarFramesDeAnimacao();
 
         const tempoA = tempoAtual - offsetA;
