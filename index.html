@@ -1,111 +1,236 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Irregularidade | Telemetria Real</title>
-    <meta name="description" content="Análise de AVL avançada com interpolação de tempo real">
-
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
-    <link rel="stylesheet" href="style.css">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" type="text/css" href="./style.css"/>
+    <title>GEOPE - Cálculo de Parâmetros</title>
 </head>
 <body>
-    <header class="cabecalho">
-        <h1>Irregularidade | Telemetria Real</h1>
-        <nav>
-            <ul>
-                <li><a href="#inicio">Importação</a></li>
-                <li><a href="#mapa-area">Análise no Mapa</a></li>
-            </ul>
-        </nav>
-    </header>
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <img class="gist-logo" src="https://th.bing.com/th/id/OIP.WXt5gHtQWWCULzuSYExo-AHaBQ?w=311&h=61&c=7&r=0&o=7&dpr=1.3&pid=1.7&rm=3" alt="Sindionibus logo" />
+            </div>
+            
+            <div class="header-text-container">
+                <h1 class="header-title">Gerência de Operações</h1>
+                <h2 class="header-subtitle">Cálculo de Parâmetros do GIST</h2>
+            </div>
+        </header>
 
-    <main>
-        <section id="inicio" class="secao">
-            <h2>Importar Arquivos (JSON ou CSV do Validador)</h2>
-
-            <div class="horarios-programados">
-                <div class="bloco-veiculo">
-                    <div class="titulo-bloco titulo-a">VEÍCULO A</div>
-                    <div class="campo-horario">
-                        <label>Início (HH:MM):</label>
-                        <input type="time" id="inicioProgramadoA">
-                        <div id="resInicioA" class="resultado-horario" style="display:none;"></div>
-                    </div>
-                    <div class="campo-horario">
-                        <label>Fim (HH:MM):</label>
-                        <input type="time" id="fimProgramadoA">
-                        <div id="resFimA" class="resultado-horario" style="display:none;"></div>
-                    </div>
+        <div class="main-content">
+            <div class="input-section">
+                <div class="input-group">
+                    <label for="linha">LINHA:</label>
+                    <input type="text" id="linha" />
                 </div>
-
-                <div class="bloco-veiculo">
-                    <div class="titulo-bloco titulo-b">VEÍCULO B</div>
-                    <div class="campo-horario">
-                        <label>Início (HH:MM):</label>
-                        <input type="time" id="inicioProgramadoB">
-                        <div id="resInicioB" class="resultado-horario" style="display:none;"></div>
-                    </div>
-                    <div class="campo-horario">
-                        <label>Fim (HH:MM):</label>
-                        <input type="time" id="fimProgramadoB">
-                        <div id="resFimB" class="resultado-horario" style="display:none;"></div>
-                    </div>
+                <div class="input-group">
+                    <label for="tabela-select">TABELA:</label>
+                    <select id="tabela-select" class="select-input" disabled>
+                        <option ></option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="hora-inicial">HORA INICIAL:</label>
+                     <select name="hora-inicial" id="hora-inicial-select" class="select-input" disabled>
+                        <option></option>
+                     </select>
+                </div>
+                <div class="input-group">
+                    <label for="hora-final">HORA FINAL:</label>
+                    <input type="time" id="hora-final" readonly />
+                </div>
+                <div class="input-group">
+                    <label>TEMPO DE VIAGEM:</label>
+                    <span id="tempo-viagem">...</span> min.
+                </div>
+                <div class="button-group">
+                    <button id="calcular" class="calc-button">Calcular</button>
+                    <button id="limpar" class="clear-button">Limpar</button>
                 </div>
             </div>
 
-            <div class="controles">
-                <div>
-                    <div class="card-veiculo card-a" id="tituloA">VEÍCULO A</div>
-                    <input type="file" id="arquivoA" accept=".json, .csv">
-                    <p id="statusA">Aguardando arquivo...</p>
+            <div class="sections-grid">
+                <div class="atrasos-section">
+                    <div class="section-title">Atrasos / Distorção</div>
+                    
+                    <div class="category">
+                        <div class="category-title">VIAGENS DE 0 A 30 MIN.</div>
+                        <div class="category-content">
+                            <div class="sub-category">
+                                <div class="sub-category-title">Atraso LIMITE: (PERDA DE 25%)</div>
+                                <label for="saida-0-30-25">SAÍDA:</label>
+                                <input type="text" id="saida-0-30-25" readonly />
+                                <label for="chegada-0-30-25">CHEGADA:</label>
+                                <input type="text" id="chegada-0-30-25" readonly />
+                            </div>
+                            <div class="sub-category">
+                                <div class="sub-category-title">Distorção LIMITE: (PERDA DE 100%)</div>
+                                <label for="saida-0-30-100">SAÍDA:</label>
+                                <input type="text" id="saida-0-30-100" readonly />
+                                <label for="chegada-0-30-100">CHEGADA:</label>
+                                <input type="text" id="chegada-0-30-100" readonly />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="category">
+                        <div class="category-title">VIAGENS DE 31 A 60 MIN.</div>
+                        <div class="category-content">
+                            <div class="sub-category">
+                                <div class="sub-category-title">Atraso LIMITE: (PERDA DE 25%)</div>
+                                <label for="saida-31-60-25">SAÍDA:</label>
+                                <input type="text" id="saida-31-60-25" readonly />
+                                <label for="chegada-31-60-25">CHEGADA:</label>
+                                <input type="text" id="chegada-31-60-25" readonly />
+                            </div>
+                            <div class="sub-category">
+                                <div class="sub-category-title">Distorção LIMITE: (PERDA DE 100%)</div>
+                                <label for="saida-31-60-100">SAÍDA:</label>
+                                <input type="text" id="saida-31-60-100" readonly />
+                                <label for="chegada-31-60-100">CHEGADA:</label>
+                                <input type="text" id="chegada-31-60-100" readonly />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="category">
+                        <div class="category-title">VIAGENS DE 61 A 200 MIN.</div>
+                        <div class="category-content">
+                            <div class="sub-category">
+                                <div class="sub-category-title">Atraso LIMITE: (PERDA DE 25%)</div>
+                                <label for="saida-61-200-25">SAÍDA:</label>
+                                <input type="text" id="saida-61-200-25" readonly />
+                                <label for="chegada-61-200-25">CHEGADA:</label>
+                                <input type="text" id="chegada-61-200-25" readonly />
+                            </div>
+                            <div class="sub-category">
+                                <div class="sub-category-title">Distorção LIMITE: (PERDA DE 100%)</div>
+                                <label for="saida-61-200-100">SAÍDA:</label>
+                                <input type="text" id="saida-61-200-100" readonly />
+                                <label for="chegada-61-200-100">CHEGADA:</label>
+                                <input type="text" id="chegada-61-200-100" readonly />
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <div class="card-veiculo card-b" id="tituloB">VEÍCULO B</div>
-                    <input type="file" id="arquivoB" accept=".json, .csv">
-                    <p id="statusB">Aguardando arquivo...</p>
+
+                <div class="adiantamento-section">
+                    <div class="section-title">Adiantamento / Distorção</div>
+                    
+                    <div class="category">
+                        <div class="category-title">VIAGENS DE 0 A 30 MIN.</div>
+                        <div class="category-content">
+                            <div class="sub-category">
+                                <div class="sub-category-title">Adiantamento LIMITE: (PERDA DE 25%)</div>
+                                <label for="saida-0-30-ad">SAÍDA:</label>
+                                <input type="text" id="saida-0-30-ad" readonly />
+                                <label for="chegada-0-30-ad">CHEGADA:</label>
+                                <input type="text" id="chegada-0-30-ad" readonly />
+                            </div>
+                            <div class="sub-category">
+                                <div class="sub-category-title">Distorção LIMITE: (PERDA DE 100%)</div>
+                                <label for="saida-0-30-ad-dist">SAÍDA:</label>
+                                <input type="text" id="saida-0-30-ad-dist" readonly />
+                                <label for="chegada-0-30-ad-dist">CHEGADA:</label>
+                                <input type="text" id="chegada-0-30-ad-dist" readonly />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="category">
+                        <div class="category-title">VIAGENS DE 31 A 60 MIN.</div>
+                        <div class="category-content">
+                            <div class="sub-category">
+                                <div class="sub-category-title">Adiantamento LIMITE: (PERDA DE 25%)</div>
+                                <label for="saida-31-60-ad">SAÍDA:</label>
+                                <input type="text" id="saida-31-60-ad" readonly />
+                                <label for="chegada-31-60-ad">CHEGADA:</label>
+                                <input type="text" id="chegada-31-60-ad" readonly />
+                            </div>
+                            <div class="sub-category">
+                                <div class="sub-category-title">Distorção LIMITE: (PERDA DE 100%)</div>
+                                <label for="saida-31-60-ad-dist">SAÍDA:</label>
+                                <input type="text" id="saida-31-60-ad-dist" readonly />
+                                <label for="chegada-31-60-ad-dist">CHEGADA:</label>
+                                <input type="text" id="chegada-31-60-ad-dist" readonly />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="category">
+                        <div class="category-title">VIAGENS DE 61 A 200 MIN.</div>
+                        <div class="category-content">
+                            <div class="sub-category">
+                                <div class="sub-category-title">Adiantamento LIMITE: (PERDA DE 25%)</div>
+                                <label for="saida-61-200-ad">SAÍDA:</label>
+                                <input type="text" id="saida-61-200-ad" readonly />
+                                <label for="chegada-61-200-ad">CHEGADA:</label>
+                                <input type="text" id="chegada-61-200-ad" readonly />
+                            </div>
+                            <div class="sub-category">
+                                <div class="sub-category-title">Distorção LIMITE: (PERDA DE 100%)</div>
+                                <label for="saida-61-200-ad-dist">SAÍDA:</label>
+                                <input type="text" id="saida-61-200-ad-dist" readonly />
+                                <label for="chegada-61-200-ad-dist">CHEGADA:</label>
+                                <input type="text" id="chegada-61-200-ad-dist" readonly />
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
-            <div class="controle-velocidade">
-                <strong>Multiplicador de Tempo Real:</strong>
-                <button class="btn-vel ativo" data-vel="1">1x</button>
-                <button class="btn-vel" data-vel="5">5x</button>
-                <button class="btn-vel" data-vel="10">10x</button>
-                <button class="btn-vel" data-vel="30">30x</button>
-                <button class="btn-vel" data-vel="60">60x</button>
+            <div class="tabela-parametros-container">
+                <h2>Parâmetros para o GIST – Vigência a partir de 01/06/2026</h2>
+                <div class="tabela-parametros-wrapper">
+                    <table class="tabela-parametros">
+                        <thead>
+                            <tr>
+                                <th>Tempo do Trecho ( min )</th>
+                                <th>Adiant. Saída/Cheg. ( % )</th>
+                                <th>% Perda do Trecho</th>
+                                <th>Atraso Sai./Cheg.</th>
+                                <th>% Perda do Trecho</th>
+                                <th>Parâmetro Distorção</th>
+                                <th>% Perda do Trecho</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>0 – 30</td>
+                                <td class="coluna-destaque">&gt;40%</td>
+                                <td class="coluna-destaque">25%</td>
+                                <td>&gt;100%</td>
+                                <td>25%</td>
+                                <td>200%</td>
+                                <td>100%</td>
+                            </tr>
+                            <tr>
+                                <td>31-60</td>
+                                <td class="coluna-destaque">&gt;28%</td>
+                                <td class="coluna-destaque">25%</td>
+                                <td>&gt;80%</td>
+                                <td>25%</td>
+                                <td>200%</td>
+                                <td>100%</td>
+                            </tr>
+                            <tr>
+                                <td>60-200</td>
+                                <td class="coluna-destaque">&gt;20%</td>
+                                <td class="coluna-destaque">25%</td>
+                                <td>&gt;40%</td>
+                                <td>25%</td>
+                                <td>200%</td>
+                                <td>100%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <button id="btnAnimacao">🚀 INICIAR COMPARAÇÃO</button>
-        </section>
-
-        <section id="mapa-area" class="secao">
-            <h2>Mapa de Reprodução</h2>
-            <div id="mapa"></div>
-            <div id="alertaAnalise" class="alerta"></div>
-
-            <div class="painel-dados">
-                <div class="dados-a">
-                    <div class="dado-linha">Veículo: <span class="valor-dado" id="numVeicA">A 🟥</span></div>
-                    <div class="dado-linha">Velocidade Atual: <span id="velA" class="valor-dado">0</span> km/h</div>
-                    <div class="dado-linha">Horário Exato: <span id="horaA" class="valor-dado">--:--:--</span></div>
-                </div>
-                <div class="separador">VS</div>
-                <div class="dados-b">
-                    <div class="dado-linha">Veículo: <span class="valor-dado" id="numVeicB">B 🟦</span></div>
-                    <div class="dado-linha">Velocidade Atual: <span id="velB" class="valor-dado">0</span> km/h</div>
-                    <div class="dado-linha">Horário Exato: <span id="horaB" class="valor-dado">--:--:--</span></div>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <footer class="rodape">
-        <p>Análise de Telemetria AVL &copy; 2026</p>
-    </footer>
-
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="script.js"></script>
+        </div>
+    </div>
 </body>
+<script src="./script.js"></script>
 </html>
