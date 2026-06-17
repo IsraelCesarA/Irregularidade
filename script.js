@@ -1,367 +1,257 @@
-// Inicialização do Mapa Leaflet
-const mapa = L.map('mapa').setView([-3.73748, -38.5846], 13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap', maxZoom: 19
-}).addTo(mapa);
+function parseHM(s) {
+    if (!s) return null;
+    const [hh, mm] = s.split(':').map(Number);
+    return hh * 60 + mm;
+}
 
-// Variáveis Globais de Controle
-let veiculos = { A: [], B: [] };
-let numerosVeiculo = { A: 'A', B: 'B' };
-let marcadoresVeiculo = { A: null, B: null };
-let trajectories = { A: [], B: [] };
-let velocidadeAnimacao = 1;
-let tempoAtual = 0; 
-let duracaoTotal = 0;
-let intervaloAnimacao;
-let animacaoEmAndamento = false;
-let animacaoPausada = false;
+function fmtHM(minutos) {
+    const total = ((Math.round(minutos) % (24 * 60)) + (24 * 60)) % (24 * 60);
+    const hh = String(Math.floor(total / 60)).padStart(2, '0');
+    const mm = String(total % 60).padStart(2, '0');
+    return `${hh}:${mm}`;
+}
 
-let offsetA = 0;
-let offsetB = 0;
+function clearFields() {
+    document.getElementById('tempo-viagem').innerText = '...';
+    document.getElementById('hora-final').value = '';
+    const inputs = document.querySelectorAll('.sub-category input');
+    inputs.forEach(input => input.value = '');
+}
 
-// Objeto para armazenar as referências do DOM
-let el = {};
+function clearInputFields() {
+    document.getElementById('linha').value = '';
+    document.getElementById('tabela-select').value = '';
+    document.getElementById('hora-inicial-select').value = '';
+    document.getElementById('tabela-select').disabled = true;
+    document.getElementById('hora-inicial-select').disabled = true;
+    while (tabelaSelect.options.length > 1) {
+        tabelaSelect.options[1].remove();
+    }
+    while (horaInicialSelect.options.length > 1) {
+        horaInicialSelect.options[1].remove();
+    }
+}
 
-document.addEventListener("DOMContentLoaded", () => {
-    el = {
-        inicioProgA: document.getElementById('inicioProgramadoA'), 
-        fimProgA: document.getElementById('fimProgramadoA'),
-        inicioProgB: document.getElementById('inicioProgramadoB'), 
-        fimProgB: document.getElementById('fimProgramadoB'),
-        tituloA: document.getElementById('tituloA'), 
-        tituloB: document.getElementById('tituloB'),
-        numVeicA: document.getElementById('numVeicA'), 
-        numVeicB: document.getElementById('numVeicB'),
-        velA: document.getElementById('velA'), 
-        horaA: document.getElementById('horaA'),
-        velB: document.getElementById('velB'), 
-        horaB: document.getElementById('horaB'),
-        alerta: document.getElementById('alertaAnalise'), 
-        btnAnimacao: document.getElementById('btnAnimacao'),
-        arquivoA: document.getElementById('arquivoA'),
-        arquivoB: document.getElementById('arquivoB')
-    };
+function getFormattedDate() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+}
 
-    // Mapeamento de Eventos
-    el.arquivoA.addEventListener('change', (e) => carregarArquivo(e, 'A'));
-    el.arquivoB.addEventListener('change', (e) => carregarArquivo(e, 'B'));
-    el.btnAnimacao.addEventListener('click', alternarAnimacao);
+async function fetchHorariosFromAPI(linha) {
+    const data = getFormattedDate();
+    const url = `https://api-lyart-chi.vercel.app/ProgramacaoNormal/${linha}?data=${data}`;
+    
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Erro na requisição: ${response.statusText}`);
+        }
+        const dados = await response.json();
+        return dados;
+    } catch (error) {
+        console.error("Erro ao buscar dados na API:", error);
+        alert("Erro ao buscar horários na API. Verifique a linha e tente novamente.");
+        return null;
+    }
+}
 
-    document.querySelectorAll('.btn-vel').forEach(botao => {
-        botao.addEventListener('click', function() {
-            const fator = parseInt(this.getAttribute('data-vel'));
-            definirVelocidade(fator, this);
-        });
-    });
+function findHoraFinal(dadosDaAPI, tabelaProcurada, horaInicialProcurada) {
+    if (!dadosDaAPI || dadosDaAPI.Message) {
+        return null;
+    }
 
-    // NOVO: Ouvinte de clique no mapa para pular o tempo da animação
-    mapa.on('click', aoClicarNoMapa);
+    const tabelas = dadosDaAPI.quadro.tabelas;
+
+    for (const tabela of tabelas) {
+        const numeroTabelaApi = String(tabela.numero).trim().toUpperCase();
+        const numeroTabelaInput = String(tabelaProcurada).trim().toUpperCase();
+
+        if (numeroTabelaApi === numeroTabelaInput) {
+            for (const trecho of tabela.trechos) {
+                const horaInicial = trecho.inicio.horario.slice(trecho.inicio.horario.indexOf('T') + 1, trecho.inicio.horario.length - 3);
+                
+                if (horaInicial === horaInicialProcurada) {
+                    const horaFinal = trecho.fim.horario.slice(trecho.fim.horario.indexOf('T') + 1, trecho.fim.horario.length - 3);
+                    return horaFinal;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+const linhaInput = document.getElementById('linha');
+const calcularButton = document.getElementById('calcular');
+const limparButton = document.getElementById('limpar');
+const tabelaSelect = document.getElementById('tabela-select');
+const horaInicialSelect = document.getElementById('hora-inicial-select');
+var dadosDaAPI = null;
+
+linhaInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        tabelaSelect.focus();
+    }
 });
 
-// Extrai numerais do nome do arquivo
-function extrairNumeroVeiculo(nomeArquivo) {
-    const semExtensao = nomeArquivo.replace('.json', '').replace('.csv', '');
-    const match = semExtensao.match(/\d+/);
-    return match ? match[0] : semExtensao;
-}
-
-function horarioParaMinutos(horario) {
-    if (!horario) return null;
-    const [h, m] = horario.split(':').map(Number);
-    return h * 60 + m;
-}
-
-function definirVelocidade(fator, botao) {
-    velocidadeAnimacao = fator;
-    document.querySelectorAll('.btn-vel').forEach(b => b.classList.remove('ativo'));
-    botao.classList.add('ativo');
-    if (intervaloAnimacao && !animacaoPausada) { 
-        clearInterval(intervaloAnimacao); 
-        iniciarLoopAnimacao(); 
-    }
-}
-
-// Interpolação baseada no Tempo Físico Relativo
-function getPosicaoNoTempo(dados, tempo) {
-    if (dados.length === 0) return null;
-    if (tempo <= dados[0].tempoRelativoMinutos) return dados[0]; 
-    if (tempo >= dados[dados.length - 1].tempoRelativoMinutos) return dados[dados.length - 1];
-
-    let pAnt = dados[0], pProx = dados[dados.length - 1];
-    
-    for (let i = 0; i < dados.length - 1; i++) {
-        if (tempo >= dados[i].tempoRelativoMinutos && tempo <= dados[i+1].tempoRelativoMinutos) {
-            pAnt = dados[i]; pProx = dados[i+1]; break;
-        }
-    }
-
-    const intervalo = pProx.tempoRelativoMinutos - pAnt.tempoRelativoMinutos;
-    if (intervalo === 0) return pAnt;
-
-    const fracao = (tempo - pAnt.tempoRelativoMinutos) / intervalo;
-    let horarioStr = "--:--:--";
-    
-    if (pAnt.timestamp && pProx.timestamp) {
-        const ts = pAnt.timestamp + (pProx.timestamp - pAnt.timestamp) * fracao;
-        const date = new Date(ts * 1000);
-        horarioStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
-    }
-
-    return {
-        latitude: pAnt.latitude + (pProx.latitude - pAnt.latitude) * fracao,
-        longitude: pAnt.longitude + (pProx.longitude - pAnt.longitude) * fracao,
-        velocidade: Math.round(pAnt.velocidade + (pProx.velocidade - pAnt.velocidade) * fracao),
-        horario: horarioStr
-    };
-}
-
-// Função auxiliar para calcular a distância simples entre duas coordenadas (Fórmula Euclidiana rápida)
-function calcularDistanciaRapida(lat1, lon1, lat2, lon2) {
-    const dLat = lat1 - lat2;
-    const dLon = lon1 - lon2;
-    return Math.sqrt(dLat * dLat + dLon * dLon);
-}
-
-// NOVO: Função que lida com o clique no mapa
-function aoClicarNoMapa(e) {
-    // Só permite interagir se a animação já tiver sido iniciada pelo menos uma vez
-    if (veiculos.A.length === 0 && veiculos.B.length === 0) return;
-
-    const latClicada = e.latlng.lat;
-    const lonClicada = e.latlng.lng;
-
-    let menorDistancia = Infinity;
-    let tempoAlvoMinutos = 0;
-    let veiculoReferencia = veiculos.A.length > 0 ? 'A' : 'B';
-
-    // Varre os pontos do veículo para achar o mais próximo de onde o usuário clicou
-    veiculos[veiculoReferencia].forEach(ponto => {
-        const dist = calcularDistanciaRapida(latClicada, lonClicada, ponto.latitude, ponto.longitude);
-        if (dist < menorDistancia) {
-            menorDistancia = dist;
-            // O tempo deste veículo precisa ser somado ao seu respectivo offset para virar o tempo global da animação
-            tempoAlvoMinutos = ponto.tempoRelativoMinutos + (veiculoReferencia === 'A' ? offsetA : offsetB);
-        }
-    });
-
-    // Se a distância for razoavelmente perto, atualiza o cronômetro da animação
-    if (menorDistancia < 0.05) { // Limite de tolerância de clique para evitar saltos acidentais muito distantes da rota
-        tempoAtual = tempoAlvoMinutos;
-        
-        // Limpa as linhas de trajetória desenhadas anteriormente para que elas sejam refeitas a partir do novo ponto
-        trajectories.A.forEach(l => mapa.removeLayer(l)); trajectories.A = [];
-        trajectories.B.forEach(l => mapa.removeLayer(l)); trajectories.B = [];
-
-        // Força a atualização visual imediata das posições
-        atualizarFramesDeAnimacao();
-
-        // Se a animação não estava rodando (estava pausada ou parada), inicia/retoma automaticamente
-        if (!animacaoEmAndamento) {
-            animacaoEmAndamento = true;
-            animacaoPausada = false;
-            el.btnAnimacao.textContent = '⏸️ PAUSAR ANIMAÇÃO';
-            el.btnAnimacao.classList.add('pausado');
-            
-            // Cria os marcadores se eles ainda não existirem no mapa
-            const posA = getPosicaoNoTempo(veiculos.A, tempoAtual - offsetA);
-            const posB = getPosicaoNoTempo(veiculos.B, tempoAtual - offsetB);
-            
-            if (!marcadoresVeiculo.A) {
-                marcadoresVeiculo.A = L.marker([posA.latitude, posA.longitude], {
-                    icon: L.divIcon({ className: 'icone-veiculo icone-a', html: numerosVeiculo.A, iconSize: [35,35] })
-                }).addTo(mapa);
+linhaInput.addEventListener('blur', async () => {
+    const linha = Number(linhaInput.value.trim());
+    if (!isNaN(linha)) {
+        const programacao = await fetchHorariosFromAPI(linha);
+        dadosDaAPI = programacao;
+        if (programacao) {
+            if(tabelaSelect.options.length > 1) {
+            while (tabelaSelect.options.length > 1) {
+                tabelaSelect.options[1].remove();
             }
-            if (!marcadoresVeiculo.B) {
-                marcadoresVeiculo.B = L.marker([posB.latitude, posB.longitude], {
-                    icon: L.divIcon({ className: 'icone-veiculo icone-b', html: numerosVeiculo.B, iconSize: [35,35] })
-                }).addTo(mapa);
+            }
+            if(horaInicialSelect.options.length > 1) {
+            while (horaInicialSelect.options.length > 1) {
+                horaInicialSelect.options[1].remove();
+            }
+            horaInicialSelect.disabled = true;
             }
 
-            iniciarLoopAnimacao();
-        }
-    }
-}
-
-// NOVO: Separado em uma função isolada para poder ser chamado tanto pelo Loop quanto pelo clique do mapa
-function atualizarFramesDeAnimacao() {
-    const tempoA = tempoAtual - offsetA;
-    const tempoB = tempoAtual - offsetB;
-
-    const posAtualA = getPosicaoNoTempo(veiculos.A, tempoA);
-    const posAtualB = getPosicaoNoTempo(veiculos.B, tempoB);
-
-    if (marcadoresVeiculo.A && posAtualA) marcadoresVeiculo.A.setLatLng([posAtualA.latitude, posAtualA.longitude]);
-    if (marcadoresVeiculo.B && posAtualB) marcadoresVeiculo.B.setLatLng([posAtualB.latitude, posAtualB.longitude]);
-
-    el.velA.textContent = tempoA >= 0 && posAtualA ? posAtualA.velocidade : 0;
-    el.horaA.textContent = tempoA >= 0 && posAtualA ? posAtualA.horario : "Aguardando Partida...";
-
-    el.velB.textContent = tempoB >= 0 && posAtualB ? posAtualB.velocidade : 0;
-    el.horaB.textContent = tempoB >= 0 && posAtualB ? posAtualB.horario : "Aguardando Partida...";
-
-    if (posAtualA && posAtualB) {
-        mapa.panTo([(posAtualA.latitude + posAtualB.latitude)/2, (posAtualA.longitude + posAtualB.longitude)/2]);
-    }
-    
-    return { posAtualA, posAtualB };
-}
-
-function carregarArquivo(event, idVeiculo) {
-    const arquivo = event.target.files[0];
-    if (!arquivo) return;
-    
-    const numero = extrairNumeroVeiculo(arquivo.name);
-    numerosVeiculo[idVeiculo] = numero;
-    if (idVeiculo === 'A') { 
-        el.tituloA.textContent = `VEÍCULO ${numero}`; 
-        el.numVeicA.textContent = `${numero} 🟥`; 
-    } else { 
-        el.tituloB.textContent = `VEÍCULO ${numero}`; 
-        el.numVeicB.textContent = `${numero} 🟦`; 
-    }
-
-    const leitor = new FileReader();
-    leitor.onload = function(e) {
-        try {
-            const texto = e.target.result;
-            let arrayDados = null;
-            
-            if (texto.includes('Latitude') && texto.includes('[')) {
-                const linhas = texto.split('\n');
-                for (let linha of linhas) {
-                    if (linha.trim().startsWith('[')) {
-                        arrayDados = JSON.parse(linha);
-                        break;
-                    }
-                }
-            } else {
-                arrayDados = JSON.parse(texto);
-            }
-
-            let dadosExtraidos = [];
-
-            if (Array.isArray(arrayDados)) {
-                arrayDados.forEach(item => {
-                    const gps = item.avlHeader?.gps?.[0];
-                    if (gps) {
-                        dadosExtraidos.push({
-                            latitude: gps.latitude / 360000,
-                            longitude: gps.longitude / 360000,
-                            velocidade: gps.velocidade || 0,
-                            timestamp: item.timestamp
-                        });
-                    }
-                });
-
-                dadosExtraidos.sort((a, b) => a.timestamp - b.timestamp);
-
-                if (dadosExtraidos.length > 0) {
-                    const tempoInicial = dadosExtraidos[0].timestamp;
-                    dadosExtraidos.forEach(p => {
-                        p.tempoRelativoMinutos = (p.timestamp - tempoInicial) / 60;
-                        const date = new Date(p.timestamp * 1000);
-                        p.horario = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
-                    });
+            for(let tabela of programacao.quadro.tabelas) {
+                const tabelas = [];
+                tabelas.push(tabela.numero);
+                tabelas.sort((a, b) => a - b);
+                for (const numeroTabela of tabelas) {
+                    const option = document.createElement('option');
+                    option.value = numeroTabela;
+                    option.textContent = numeroTabela;
+                    tabelaSelect.appendChild(option);
                 }
             }
+            tabelaSelect.disabled = false;
+        }
+    }
+});
 
-            veiculos[idVeiculo] = dadosExtraidos;
-            document.getElementById(`status${idVeiculo}`).textContent = `✅ ${dadosExtraidos.length} pontos carregados | ${numero}`;
-            
-            if (dadosExtraidos.length > 0 && dadosExtraidos[0].timestamp) {
-                const elInicio = idVeiculo === 'A' ? el.inicioProgA : el.inicioProgB;
-                const elFim = idVeiculo === 'A' ? el.fimProgA : el.fimProgB;
-                elInicio.value = dadosExtraidos[0].horario.substring(0, 5);
-                elFim.value = dadosExtraidos[dadosExtraidos.length - 1].horario.substring(0, 5);
+tabelaSelect.addEventListener('change', (e) => {
+    const tabelaSelecionada = e.target.value;
+    if (tabelaSelecionada) {
+        horaInicialSelect.disabled = false;
+        if(horaInicialSelect.options.length > 1) {
+            while (horaInicialSelect.options.length > 1) {
+                horaInicialSelect.options[1].remove();
             }
-
-        } catch (erro) { alert('Erro ao processar arquivo: ' + erro.message); }
-    };
-    leitor.readAsText(arquivo);
-}
-
-function alternarAnimacao() {
-    if (!animacaoEmAndamento) {
-        if (veiculos.A.length === 0 || veiculos.B.length === 0) { alert('Carregue os DOIS arquivos!'); return; }
-        if (!el.inicioProgA.value || !el.fimProgA.value || !el.inicioProgB.value || !el.fimProgB.value) {
-            alert('Os tempos não foram processados. Preencha ou carregue novamente.'); return;
         }
 
-        const minA = horarioParaMinutos(el.inicioProgA.value);
-        const minB = horarioParaMinutos(el.inicioProgB.value);
-        const tempoInicialGlobal = Math.min(minA, minB);
+        for (const trecho of dadosDaAPI.quadro.tabelas.find(t => t.numero == tabelaSelecionada).trechos) {
+            const horarios = [];
+            horarios.push(trecho.inicio.horario.slice(trecho.inicio.horario.indexOf('T') + 1, trecho.inicio.horario.length - 3)+" - "+trecho.inicio.postoControle.trim());
+            horarios.sort((a, b) => parseHM(a) - parseHM(b));
+            for (const horario of horarios) {
+                const option = document.createElement('option');
+                const [horarioPosto,nomePosto] =horario.split(" - ");
+                option.value = horarioPosto;
+                option.textContent = `${horarioPosto}  (${nomePosto})`;
+                horaInicialSelect.appendChild(option);
+            }
+        }
+    }
+});
 
-        offsetA = minA - tempoInicialGlobal;
-        offsetB = minB - tempoInicialGlobal;
-        
-        const duracaoA = veiculos.A[veiculos.A.length - 1].tempoRelativoMinutos;
-        const duracaoB = veiculos.B[veiculos.B.length - 1].tempoRelativoMinutos;
-        duracaoTotal = Math.max(duracaoA + offsetA, duracaoB + offsetB);
+calcularButton.addEventListener('click', async () => {
+    clearFields();
 
-        if (marcadoresVeiculo.A) mapa.removeLayer(marcadoresVeiculo.A);
-        if (marcadoresVeiculo.B) mapa.removeLayer(marcadoresVeiculo.B);
-        trajectories.A.forEach(l => mapa.removeLayer(l)); trajectories.A = [];
-        trajectories.B.forEach(l => mapa.removeLayer(l)); trajectories.B = [];
-        tempoAtual = 0; el.alerta.style.display = 'none';
+    const linha = linhaInput.value;
+    const tabela = tabelaSelect.value;
+    const horaInicialInputVal = horaInicialSelect.value;
 
-        const posInicialA = getPosicaoNoTempo(veiculos.A, 0);
-        const posInicialB = getPosicaoNoTempo(veiculos.B, 0);
+    if (!linha || !tabela || !horaInicialInputVal) {
+        alert('Por favor, preencha a Linha, Tabela e Hora Inicial.');
+        return;
+    }
 
-        marcadoresVeiculo.A = L.marker([posInicialA.latitude, posInicialA.longitude], {
-            icon: L.divIcon({ className: 'icone-veiculo icone-a', html: numerosVeiculo.A, iconSize: [35,35] })
-        }).addTo(mapa);
-        marcadoresVeiculo.B = L.marker([posInicialB.latitude, posInicialB.longitude], {
-            icon: L.divIcon({ className: 'icone-veiculo icone-b', html: numerosVeiculo.B, iconSize: [35,35] })
-        }).addTo(mapa);
+    const horaFinal = findHoraFinal(dadosDaAPI, tabela, horaInicialInputVal);
 
-        animacaoEmAndamento = true; animacaoPausada = false;
-        el.btnAnimacao.textContent = '⏸️ PAUSAR ANIMAÇÃO';
-        el.btnAnimacao.classList.add('pausado');
-        iniciarLoopAnimacao();
+    if (!horaFinal) {
+        alert('Horário correspondente não encontrado para a Linha, Tabela e Hora Inicial informadas. Verifique os dados.');
+        return;
+    }
+
+    const horaInicial = parseHM(horaInicialInputVal);
+    let tempoViagem = parseHM(horaFinal) - horaInicial;
+    
+    if (tempoViagem < 0) {
+        tempoViagem += 24 * 60;
+    }
+
+    document.getElementById('hora-final').value = horaFinal;
+    document.getElementById('tempo-viagem').innerText = tempoViagem;
+
+    let params = {};
+    
+    // Configuração dos parâmetros (Regra de 01/06/2026 + Distorção de Adiantamento adicionada)
+    if (tempoViagem >= 0 && tempoViagem <= 30) {
+        params = { adiantamento: 40, distorcao: 200, atraso25: 100, atraso100: 200 };
+    } else if (tempoViagem > 30 && tempoViagem <= 60) {
+        params = { adiantamento: 28, distorcao: 200, atraso25: 80, atraso100: 200 };
+    } else if (tempoViagem > 60 && tempoViagem <= 200) {
+        params = { adiantamento: 20, distorcao: 200, atraso25: 40, atraso100: 200 };
     } else {
-        if (!animacaoPausada) {
-            clearInterval(intervaloAnimacao);
-            animacaoPausada = true;
-            el.btnAnimacao.textContent = '▶️ CONTINUAR ANIMAÇÃO';
-        } else {
-            animacaoPausada = false;
-            el.btnAnimacao.textContent = '⏸️ PAUSAR ANIMAÇÃO';
-            iniciarLoopAnimacao();
-        }
+        alert('Tempo de viagem fora do intervalo de 0 a 200 minutos.');
+        return;
     }
-}
 
-function iniciarLoopAnimacao() {
-    const taxaDeAtualizacaoMs = 250; 
+    // Cálculos dos limites em minutos
+    const adiantamentoLimiteMin = Math.round(tempoViagem * (params.adiantamento / 100));
+    const distorcaoLimiteMin = Math.round(tempoViagem * (params.distorcao / 100));
+    const atraso25LimiteMin = (params.atraso25 !== null) ? Math.round(tempoViagem * (params.atraso25 / 100)) : null;
+    const atraso100LimiteMin = Math.round(tempoViagem * (params.atraso100 / 100));
+
+    // Adiantamento (Subtrai da hora de referência)
+    const saidaAdiantamento = horaInicial - adiantamentoLimiteMin;
+    const chegadaAdiantamento = parseHM(horaFinal) - adiantamentoLimiteMin;
     
-    let posAnteriorA = getPosicaoNoTempo(veiculos.A, tempoAtual - offsetA);
-    let posAnteriorB = getPosicaoNoTempo(veiculos.B, tempoAtual - offsetB);
+    const saidaAdiantamentoDist = horaInicial - distorcaoLimiteMin;
+    const chegadaAdiantamentoDist = parseHM(horaFinal) - distorcaoLimiteMin;
+    
+    // Atraso (Soma na hora de referência)
+    const saidaAtraso25 = (atraso25LimiteMin !== null) ? horaInicial + atraso25LimiteMin : null;
+    const chegadaAtraso25 = (atraso25LimiteMin !== null) ? parseHM(horaFinal) + atraso25LimiteMin : null;
+    
+    const saidaAtraso100 = horaInicial + atraso100LimiteMin;
+    const llegadaAtraso100 = parseHM(horaFinal) + atraso100LimiteMin;
 
-    intervaloAnimacao = setInterval(() => {
-        if (tempoAtual >= duracaoTotal) {
-            clearInterval(intervaloAnimacao);
-            animacaoEmAndamento = false; animacaoPausada = false;
-            el.btnAnimacao.textContent = '🚀 INICIAR COMPARAÇÃO';
-            el.btnAnimacao.classList.remove('pausado');
-            return;
-        }
+    document.querySelectorAll('.sub-category input').forEach(input => input.value = '');
+    
+    if (tempoViagem >= 0 && tempoViagem <= 30) {
+        document.getElementById('saida-0-30-25').value = fmtHM(saidaAtraso25);
+        document.getElementById('chegada-0-30-25').value = fmtHM(chegadaAtraso25);
+        document.getElementById('saida-0-30-100').value = fmtHM(saidaAtraso100);
+        document.getElementById('chegada-0-30-100').value = fmtHM(llegadaAtraso100);
+        document.getElementById('saida-0-30-ad').value = fmtHM(saidaAdiantamento);
+        document.getElementById('chegada-0-30-ad').value = fmtHM(chegadaAdiantamento);
+        document.getElementById('saida-0-30-ad-dist').value = fmtHM(saidaAdiantamentoDist);
+        document.getElementById('chegada-0-30-ad-dist').value = fmtHM(chegadaAdiantamentoDist);
+    } else if (tempoViagem > 30 && tempoViagem <= 60) {
+        document.getElementById('saida-31-60-25').value = fmtHM(saidaAtraso25);
+        document.getElementById('chegada-31-60-25').value = fmtHM(chegadaAtraso25);
+        document.getElementById('saida-31-60-100').value = fmtHM(saidaAtraso100);
+        document.getElementById('chegada-31-60-100').value = fmtHM(llegadaAtraso100);
+        document.getElementById('saida-31-60-ad').value = fmtHM(saidaAdiantamento);
+        document.getElementById('chegada-31-60-ad').value = fmtHM(chegadaAdiantamento);
+        document.getElementById('saida-31-60-ad-dist').value = fmtHM(saidaAdiantamentoDist);
+        document.getElementById('chegada-31-60-ad-dist').value = fmtHM(chegadaAdiantamentoDist);
+    } else if (tempoViagem > 60 && tempoViagem <= 200) {
+        document.getElementById('saida-61-200-25').value = fmtHM(saidaAtraso25);
+        document.getElementById('chegada-61-200-25').value = fmtHM(chegadaAtraso25);
+        document.getElementById('saida-61-200-100').value = fmtHM(saidaAtraso100);
+        document.getElementById('chegada-61-200-100').value = fmtHM(llegadaAtraso100);
+        document.getElementById('saida-61-200-ad').value = fmtHM(saidaAdiantamento);
+        document.getElementById('chegada-61-200-ad').value = fmtHM(chegadaAdiantamento);
+        document.getElementById('saida-61-200-ad-dist').value = fmtHM(saidaAdiantamentoDist);
+        document.getElementById('chegada-61-200-ad-dist').value = fmtHM(chegadaAdiantamentoDist);
+    }
+});
 
-        tempoAtual += (taxaDeAtualizacaoMs / 60000) * velocidadeAnimacao; 
-
-        // Atualiza a tela e pega as novas coordenadas geradas
-        const { posAtualA, posAtualB } = atualizarFramesDeAnimacao();
-
-        const tempoA = tempoAtual - offsetA;
-        const tempoB = tempoAtual - offsetB;
-
-        if (tempoA > 0 && posAnteriorA && posAtualA && posAtualA.latitude !== posAnteriorA.latitude) {
-            trajectories.A.push(L.polyline([[posAnteriorA.latitude, posAnteriorA.longitude], [posAtualA.latitude, posAtualA.longitude]], {color:'#d32f2f', weight:3}).addTo(mapa));
-        }
-        if (tempoB > 0 && posAnteriorB && posAtualB && posAtualB.latitude !== posAnteriorB.latitude) {
-            trajectories.B.push(L.polyline([[posAnteriorB.latitude, posAnteriorB.longitude], [posAtualB.latitude, posAtualB.longitude]], {color:'#1976d2', weight:3, dashArray:'5,5'}).addTo(mapa));
-        }
-
-        posAnteriorA = posAtualA; posAnteriorB = posAtualB;
-
-    }, taxaDeAtualizacaoMs);
-}
+limparButton.addEventListener('click', () => {
+    clearInputFields();
+    clearFields();
+});
